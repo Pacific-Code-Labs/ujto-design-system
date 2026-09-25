@@ -66,6 +66,7 @@
   --color-brand-clay: hsl(var(--brand-clay));
   --color-brand-earth: hsl(var(--brand-earth));
   --color-brand-sand: hsl(var(--brand-sand));
+  --color-brand-ink: hsl(var(--brand-ink));
 }
 
 @layer base {
