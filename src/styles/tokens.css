@@ -1,0 +1,97 @@
+/*
+ * Ujtö̀ design tokens — "Tierra y río de Talamanca".
+ * Every value is a bare HSL triplet ("H S% L%") so utilities can add alpha
+ * (bg-primary/90). Light on :root, dark on .dark. Never use literal colours in
+ * components; add a token here instead.
+ */
+:root {
+  /* Brand palette */
+  --brand-river: 184 52% 25%;
+  --brand-forest: 128 26% 33%;
+  --brand-clay: 18 73% 44%;
+  --brand-earth: 20 46% 38%;
+  --brand-sand: 38 46% 91%;
+
+  --background: 38 46% 91%;
+  --foreground: 16 23% 18%;
+  --card: 40 60% 97%;
+  --card-foreground: 16 23% 18%;
+  --popover: 40 60% 97%;
+  --popover-foreground: 16 23% 18%;
+  --primary: 184 52% 25%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 20 46% 38%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 38 36% 85%;
+  --muted-foreground: 20 18% 36%;
+  --accent: 18 73% 44%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 128 26% 33%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 40%;
+  --warning-foreground: 0 0% 100%;
+  --border: 36 28% 80%;
+  --input: 36 28% 80%;
+  --ring: 184 52% 25%;
+
+  --chart-1: 184 52% 25%;
+  --chart-2: 18 73% 44%;
+  --chart-3: 128 26% 33%;
+  --chart-4: 20 46% 38%;
+  --chart-5: 42 80% 48%;
+
+  /* Sidebar surface (dashboard + admin) */
+  --sidebar: 40 60% 97%;
+  --sidebar-foreground: 16 23% 18%;
+  --sidebar-border: 36 28% 82%;
+  --sidebar-primary: 184 52% 25%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 38 40% 90%;
+  --sidebar-accent-foreground: 16 23% 18%;
+  --sidebar-ring: 184 52% 25%;
+
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 224 17% 13%;
+  --foreground: 38 46% 91%;
+  --card: 224 16% 16%;
+  --card-foreground: 38 46% 91%;
+  --popover: 224 16% 16%;
+  --popover-foreground: 38 46% 91%;
+  --primary: 175 35% 63%;
+  --primary-foreground: 224 17% 13%;
+  --secondary: 21 45% 57%;
+  --secondary-foreground: 224 17% 13%;
+  --muted: 224 14% 20%;
+  --muted-foreground: 38 18% 70%;
+  --accent: 18 72% 56%;
+  --accent-foreground: 224 17% 13%;
+  --destructive: 0 63% 45%;
+  --destructive-foreground: 0 0% 98%;
+  --success: 128 30% 58%;
+  --success-foreground: 224 17% 13%;
+  --warning: 38 92% 55%;
+  --warning-foreground: 224 17% 13%;
+  --border: 224 12% 25%;
+  --input: 224 12% 25%;
+  --ring: 175 35% 63%;
+
+  --chart-1: 175 35% 63%;
+  --chart-2: 18 72% 56%;
+  --chart-3: 128 30% 58%;
+  --chart-4: 21 45% 57%;
+  --chart-5: 42 80% 60%;
+
+  --sidebar: 224 18% 10%;
+  --sidebar-foreground: 38 30% 88%;
+  --sidebar-border: 224 12% 20%;
+  --sidebar-primary: 175 35% 63%;
+  --sidebar-primary-foreground: 224 17% 13%;
+  --sidebar-accent: 224 14% 17%;
+  --sidebar-accent-foreground: 38 46% 91%;
+  --sidebar-ring: 175 35% 63%;
+}
