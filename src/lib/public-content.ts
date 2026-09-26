@@ -1,0 +1,167 @@
+// Anonymous reads from the public API (public-api.<domain>, ujto-public-be).
+//
+// The public gateway is AWS_IAM: a visitor gets short-lived GUEST credentials from a Cognito
+// identity pool (no user pool, no sign-up) and signs each GET with SigV4. Everything here is
+// plain fetch + WebCrypto (browser and Node 18+), no SDK. The guest role may only call
+// GET /api/public/*, so the pool id is safe to ship in a static site.
+//
+// Sites use loadPublishedContent() once at startup: published documents override the bundled
+// src/content/*.json; on any failure (offline, API down, slow) the bundled copy is used.
+
+export interface PublicApiConfig {
+  /** Base URL, e.g. https://public-api.ujto.jcampos.dev */
+  url: string;
+  identityPoolId: string;
+  region?: string;
+}
+
+interface GuestCredentials {
+  accessKeyId: string;
+  secretKey: string;
+  sessionToken: string;
+  /** epoch ms */
+  expiration: number;
+}
+
+const CREDENTIALS_KEY = "ujto-public-guest";
+const ID_KEY = "ujto-public-identity";
+const encoder = new TextEncoder();
+
+function storage(kind: "local" | "session"): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : kind === "local" ? window.localStorage : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+async function cognitoIdentity<T>(region: string, target: string, body: unknown): Promise<T> {
+  const res = await fetch(`https://cognito-identity.${region}.amazonaws.com/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-amz-json-1.1", "X-Amz-Target": `AWSCognitoIdentityService.${target}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Cognito identity ${target} failed (${res.status})`);
+  return res.json() as Promise<T>;
+}
+
+let memoryCredentials: GuestCredentials | null = null;
+
+async function guestCredentials(config: PublicApiConfig): Promise<GuestCredentials> {
+  const region = config.region ?? config.identityPoolId.split(":")[0];
+  const fresh = (c: GuestCredentials | null) => c && c.expiration - Date.now() > 60_000;
+  if (fresh(memoryCredentials)) return memoryCredentials!;
+  const cached = storage("session")?.getItem(CREDENTIALS_KEY);
+  if (cached) {
+    const parsed = JSON.parse(cached) as GuestCredentials;
+    if (fresh(parsed)) return (memoryCredentials = parsed);
+  }
+  // Reuse the visitor's guest identity id (no personal data; one id per browser).
+  let identityId = storage("local")?.getItem(ID_KEY) ?? null;
+  const fetchCredentials = async () => {
+    if (!identityId) {
+      identityId = (await cognitoIdentity<{ IdentityId: string }>(region, "GetId", { IdentityPoolId: config.identityPoolId })).IdentityId;
+      storage("local")?.setItem(ID_KEY, identityId);
+    }
+    return cognitoIdentity<{ Credentials: { AccessKeyId: string; SecretKey: string; SessionToken: string; Expiration: number } }>(
+      region, "GetCredentialsForIdentity", { IdentityId: identityId });
+  };
+  let result;
+  try {
+    result = await fetchCredentials();
+  } catch {
+    identityId = null; // a stale/removed identity: start a new one once
+    result = await fetchCredentials();
+  }
+  const c = result.Credentials;
+  memoryCredentials = { accessKeyId: c.AccessKeyId, secretKey: c.SecretKey, sessionToken: c.SessionToken, expiration: c.Expiration * 1000 };
+  storage("session")?.setItem(CREDENTIALS_KEY, JSON.stringify(memoryCredentials));
+  return memoryCredentials;
+}
+
+const hex = (buffer: ArrayBuffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+const sha256 = async (text: string) => hex(await crypto.subtle.digest("SHA-256", encoder.encode(text)));
+
+async function hmac(key: ArrayBuffer | Uint8Array, text: string): Promise<ArrayBuffer> {
+  const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(text));
+}
+
+const encodeSegment = (segment: string) =>
+  encodeURIComponent(segment).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+/** SigV4-signed GET for API Gateway (service execute-api). */
+export async function signedPublicGet(config: PublicApiConfig, path: string, init: { signal?: AbortSignal } = {}): Promise<Response> {
+  const credentials = await guestCredentials(config);
+  const region = config.region ?? config.identityPoolId.split(":")[0];
+  const url = new URL(path, config.url.replace(/\/+$/, "") + "/");
+  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const date = amzDate.slice(0, 8);
+  const canonicalUri = url.pathname.split("/").map((s) => encodeSegment(decodeURIComponent(s))).join("/");
+  const canonicalQuery = [...url.searchParams.entries()]
+    .map(([k, v]) => [encodeSegment(k), encodeSegment(v)])
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("&");
+  const signedHeaders = "host;x-amz-date;x-amz-security-token";
+  const canonicalRequest = [
+    "GET", canonicalUri, canonicalQuery,
+    `host:${url.host}\nx-amz-date:${amzDate}\nx-amz-security-token:${credentials.sessionToken}\n`,
+    signedHeaders, await sha256(""),
+  ].join("\n");
+  const scope = `${date}/${region}/execute-api/aws4_request`;
+  const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, await sha256(canonicalRequest)].join("\n");
+  let key: ArrayBuffer = await hmac(encoder.encode(`AWS4${credentials.secretKey}`), date);
+  for (const part of [region, "execute-api", "aws4_request"]) key = await hmac(key, part);
+  const signature = hex(await hmac(key, stringToSign));
+  return fetch(url.toString(), {
+    method: "GET",
+    signal: init.signal,
+    headers: {
+      "X-Amz-Date": amzDate,
+      "X-Amz-Security-Token": credentials.sessionToken,
+      Authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    },
+  });
+}
+
+export interface PublishedSite {
+  site: string;
+  updated_at: string | null;
+  versions: Record<string, number>;
+  documents: Record<string, unknown>;
+}
+
+/**
+ * The site's published documents ({ hero: {...}, ... }), or null when unavailable. Waits at
+ * most `timeoutMs`, then falls back to the last copy this browser saw (if any).
+ */
+export async function loadPublishedContent(config: PublicApiConfig | null, site: "landing" | "app", timeoutMs = 2500): Promise<Record<string, unknown> | null> {
+  const cacheKey = `ujto-content-${site}`;
+  const cached = () => {
+    try {
+      const raw = storage("local")?.getItem(cacheKey);
+      return raw ? ((JSON.parse(raw) as PublishedSite).documents ?? null) : null;
+    } catch {
+      return null;
+    }
+  };
+  if (!config?.url || !config.identityPoolId) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await signedPublicGet(config, `/api/public/content/${site}`, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const published = (await res.json()) as PublishedSite;
+    try {
+      storage("local")?.setItem(cacheKey, JSON.stringify(published));
+    } catch {
+      /* storage full or blocked: fine */
+    }
+    return published.documents;
+  } catch {
+    return cached();
+  } finally {
+    clearTimeout(timer);
+  }
+}

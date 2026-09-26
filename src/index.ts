@@ -7,6 +7,7 @@ export * from "./lib/icons";
 export * from "./lib/rich-text";
 export * from "./lib/brand-theme";
 export * from "./lib/media";
+export * from "./lib/public-content";
 
 export * from "./i18n/LanguageProvider";
 export * from "./i18n/LanguageToggle";
