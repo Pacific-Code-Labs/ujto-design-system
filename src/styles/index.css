@@ -163,3 +163,15 @@
     animation: none;
   }
 }
+
+/* ActivityBar: indeterminate progress (work with no measurable percentage). */
+@keyframes ujto-activity {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.ujto-activity-bar {
+  animation: ujto-activity 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ujto-activity-bar { animation: none; width: 100%; opacity: 0.6; }
+}
