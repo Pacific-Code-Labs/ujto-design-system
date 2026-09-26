@@ -206,7 +206,10 @@ export function AppShell(props: AppShellProps) {
       <div className="flex min-w-0 flex-1 flex-col">
         {topbar(openMobile)}
         <main ref={mainRef} id="page-content" className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {children}
+          {/* Keyed by route: each page enters with a short fade-and-rise (none with reduced motion). */}
+          <div key={location} className="ujto-page-enter">
+            {children}
+          </div>
         </main>
       </div>
     </div>
