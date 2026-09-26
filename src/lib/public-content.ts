@@ -5,8 +5,10 @@
 // plain fetch + WebCrypto (browser and Node 18+), no SDK. The guest role may only call
 // GET /api/public/*, so the pool id is safe to ship in a static site.
 //
-// Sites use loadPublishedContent() once at startup: published documents override the bundled
-// src/content/*.json; on any failure (offline, API down, slow) the bundled copy is used.
+// Sites render at once from cachedPublishedContent() (the last copy this browser saw) or their
+// bundled src/content/*.json, then call loadPublishedContent() in the background and re-render
+// only when the published documents differ (stale-while-revalidate: a cold API never delays
+// the first paint).
 
 export interface PublicApiConfig {
   /** Base URL, e.g. https://public-api.ujto.jcampos.dev */
@@ -132,20 +134,24 @@ export interface PublishedSite {
   documents: Record<string, unknown>;
 }
 
+const cacheKey = (site: string) => `ujto-content-${site}`;
+
+/** The last published documents this browser saw (synchronous; null on a first visit). */
+export function cachedPublishedContent(site: "landing" | "app"): Record<string, unknown> | null {
+  try {
+    const raw = storage("local")?.getItem(cacheKey(site));
+    return raw ? ((JSON.parse(raw) as PublishedSite).documents ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The site's published documents ({ hero: {...}, ... }), or null when unavailable. Waits at
- * most `timeoutMs`, then falls back to the last copy this browser saw (if any).
+ * The site's published documents ({ hero: {...}, ... }) fresh from the public API, or the last
+ * cached copy when the API is unavailable within `timeoutMs` (null when neither exists).
  */
-export async function loadPublishedContent(config: PublicApiConfig | null, site: "landing" | "app", timeoutMs = 2500): Promise<Record<string, unknown> | null> {
-  const cacheKey = `ujto-content-${site}`;
-  const cached = () => {
-    try {
-      const raw = storage("local")?.getItem(cacheKey);
-      return raw ? ((JSON.parse(raw) as PublishedSite).documents ?? null) : null;
-    } catch {
-      return null;
-    }
-  };
+export async function loadPublishedContent(config: PublicApiConfig | null, site: "landing" | "app", timeoutMs = 10_000): Promise<Record<string, unknown> | null> {
+  const cached = () => cachedPublishedContent(site);
   if (!config?.url || !config.identityPoolId) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -154,7 +160,7 @@ export async function loadPublishedContent(config: PublicApiConfig | null, site:
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const published = (await res.json()) as PublishedSite;
     try {
-      storage("local")?.setItem(cacheKey, JSON.stringify(published));
+      storage("local")?.setItem(cacheKey(site), JSON.stringify(published));
     } catch {
       /* storage full or blocked: fine */
     }
